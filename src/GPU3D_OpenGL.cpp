@@ -233,26 +233,29 @@ std::unique_ptr<GLRenderer> GLRenderer::New() noexcept
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(IndexBuffer), nullptr, GL_DYNAMIC_DRAW);
 
     glGenFramebuffers(1, &result->MainFramebuffer);
+    glGenFramebuffers(1, &result->ResolveFramebuffer);
+    glGenFramebuffers(1, &result->DownscaleFramebuffer);
 
     // color buffers
     glGenTextures(1, &result->ColorBufferTex);
-    SetupDefaultTexParams(result->ColorBufferTex);
 
     // depth/stencil buffer
     glGenTextures(1, &result->DepthBufferTex);
-    SetupDefaultTexParams(result->DepthBufferTex);
 
     // attribute buffer
     // R: opaque polyID (for edgemarking)
     // G: edge flag
     // B: fog flag
     glGenTextures(1, &result->AttrBufferTex);
-    SetupDefaultTexParams(result->AttrBufferTex);
 
     // downscale framebuffer for display capture (always 256x192)
     glGenTextures(1, &result->DownScaleBufferTex);
     SetupDefaultTexParams(result->DownScaleBufferTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 192, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+    // Multi-sampling resolve buffer.
+    glGenTextures(1, &result->ResolveBufferTex);
+    SetupDefaultTexParams(result->ResolveBufferTex);
 
     glEnable(GL_BLEND);
     glBlendEquationSeparate(GL_FUNC_ADD, GL_MAX);
@@ -290,11 +293,13 @@ GLRenderer::~GLRenderer()
     glDeleteTextures(1, &TexPalMemID);
 
     glDeleteFramebuffers(1, &MainFramebuffer);
+    glDeleteFramebuffers(1, &ResolveFramebuffer);
     glDeleteFramebuffers(1, &DownscaleFramebuffer);
     glDeleteTextures(1, &ColorBufferTex);
     glDeleteTextures(1, &DepthBufferTex);
     glDeleteTextures(1, &AttrBufferTex);
     glDeleteTextures(1, &DownScaleBufferTex);
+    glDeleteTextures(1, &ResolveBufferTex);
 
     glDeleteVertexArrays(1, &VertexArrayID);
     glDeleteBuffers(1, &VertexBufferID);
@@ -339,13 +344,28 @@ void GLRenderer::SetRenderSettings(bool betterpolygons, int scale) noexcept
     ScreenW = 256 * scale;
     ScreenH = 192 * scale;
 
-    glBindTexture(GL_TEXTURE_2D, ColorBufferTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ScreenW, ScreenH, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    GLint color_samples = {};
+    GLint depth_stencil_samples = {};
+    GLint max_framebuffer_samples = {};
+    glGetIntegerv(GL_MAX_COLOR_TEXTURE_SAMPLES, &color_samples);
+    glGetIntegerv(GL_MAX_DEPTH_TEXTURE_SAMPLES, &depth_stencil_samples);
+    glGetIntegerv(GL_MAX_FRAMEBUFFER_SAMPLES, &max_framebuffer_samples);
+    color_samples = std::min(color_samples, max_framebuffer_samples);
+    depth_stencil_samples = std::min(depth_stencil_samples, max_framebuffer_samples);
 
-    glBindTexture(GL_TEXTURE_2D, DepthBufferTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, ScreenW, ScreenH, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
-    glBindTexture(GL_TEXTURE_2D, AttrBufferTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, ScreenW, ScreenH, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, ColorBufferTex);
+    glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, color_samples, GL_RGBA8, ScreenW, ScreenH, GL_FALSE);
+
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, DepthBufferTex);
+    glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, depth_stencil_samples, GL_DEPTH24_STENCIL8, ScreenW, ScreenH, GL_FALSE);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, AttrBufferTex);
+    glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, color_samples, GL_RGB8, ScreenW, ScreenH, GL_FALSE);
+
+    glBindTexture(GL_TEXTURE_2D, ResolveBufferTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, ScreenW, ScreenH, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, ResolveFramebuffer);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, ResolveBufferTex, 0);
 
     glBindFramebuffer(GL_FRAMEBUFFER, DownscaleFramebuffer);
     glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, DownScaleBufferTex, 0);
@@ -1066,9 +1086,9 @@ void GLRenderer::RenderSceneChunk(const GPU3D& gpu3d, int y, int h)
         glStencilMask(0);
 
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, DepthBufferTex);
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, DepthBufferTex);
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, AttrBufferTex);
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, AttrBufferTex);
 
         glBindBuffer(GL_ARRAY_BUFFER, ClearVertexBufferID);
         glBindVertexArray(ClearVertexArrayID);
@@ -1118,6 +1138,7 @@ void GLRenderer::RenderFrame(GPU& gpu)
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, MainFramebuffer);
+    glEnable(GL_MULTISAMPLE);
 
     ShaderConfig.uScreenSize[0] = ScreenW;
     ShaderConfig.uScreenSize[1] = ScreenH;
@@ -1283,6 +1304,14 @@ void GLRenderer::RenderFrame(GPU& gpu)
 
         RenderSceneChunk(gpu.GPU3D, 0, 192);
     }
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, MainFramebuffer);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, ResolveFramebuffer);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glBlitFramebuffer(0, 0, ScreenW, ScreenH, 0, 0, ScreenW, ScreenH, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+    glDisable(GL_MULTISAMPLE);
 }
 
 void GLRenderer::Stop(const GPU& gpu)
@@ -1294,12 +1323,19 @@ void GLRenderer::PrepareCaptureFrame()
 {
     glBindFramebuffer(GL_READ_FRAMEBUFFER, MainFramebuffer);
     glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, ResolveFramebuffer);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glBlitFramebuffer(0, 0, ScreenW, ScreenH, 0, 0, ScreenW, ScreenH, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, ResolveFramebuffer);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, DownscaleFramebuffer);
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
-    glBlitFramebuffer(0, 0, ScreenW, ScreenH, 0, 0, 256, 192, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBlitFramebuffer(0, 0, ScreenW, ScreenH, 0, 0, 256, 192, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, PixelbufferID);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, DownscaleFramebuffer);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, PixelbufferID);
     glReadPixels(0, 0, 256, 192, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 }
 
@@ -1339,7 +1375,7 @@ u32* GLRenderer::GetLine(int line)
 
 void GLRenderer::SetupAccelFrame()
 {
-    glBindTexture(GL_TEXTURE_2D, ColorBufferTex);
+    glBindTexture(GL_TEXTURE_2D, ResolveBufferTex);
 }
 
 }

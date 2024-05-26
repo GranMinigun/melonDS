@@ -186,9 +186,10 @@ std::unique_ptr<Context> ContextGLX::CreateSharedContext(const WindowInfo& wi)
 
 bool ContextGLX::CreateWindow(int screen)
 {
-  int attribs[32] = {GLX_X_RENDERABLE,  True,           GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
-                     GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR, GLX_DOUBLEBUFFER,  True};
-  int nattribs = 8;
+  int attribs[32] = {GLX_X_RENDERABLE,   True,           GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+                     GLX_X_VISUAL_TYPE,  GLX_TRUE_COLOR, GLX_DOUBLEBUFFER,  True,
+                     GLX_SAMPLE_BUFFERS, 1};
+  int nattribs = 10;
 
   switch (m_wi.surface_format)
   {

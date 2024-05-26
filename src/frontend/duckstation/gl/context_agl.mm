@@ -166,11 +166,13 @@ bool ContextAGL::CreateContext(NSOpenGLContext* share_context, int profile, bool
   if (m_pixel_format)
     [m_pixel_format release];
 
-  const std::array<NSOpenGLPixelFormatAttribute, 5> attribs = {{
+  const std::array<NSOpenGLPixelFormatAttribute, 8> attribs = {{
       NSOpenGLPFADoubleBuffer,
       NSOpenGLPFAOpenGLProfile,
       static_cast<NSOpenGLPixelFormatAttribute>(profile),
       NSOpenGLPFAAccelerated,
+      NSOpenGLPFAMultisample,
+      NSOpenGLPFASampleBuffers, static_cast<NSOpenGLPixelFormatAttribute>(1),
       0}};
   m_pixel_format = [[NSOpenGLPixelFormat alloc] initWithAttributes:attribs.data()];
   if (m_pixel_format == nil)

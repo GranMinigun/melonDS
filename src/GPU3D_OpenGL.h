@@ -155,10 +155,10 @@ private:
     int ScreenW {}, ScreenH {};
 
     GLuint ColorBufferTex {}, DepthBufferTex {}, AttrBufferTex {};
-    GLuint DownScaleBufferTex {};
+    GLuint DownScaleBufferTex {}, ResolveBufferTex {};
     GLuint PixelbufferID {};
 
-    GLuint MainFramebuffer {}, DownscaleFramebuffer {};
+    GLuint MainFramebuffer {}, ResolveFramebuffer {}, DownscaleFramebuffer {};
     u32 Framebuffer[256*192] {};
 };
 }

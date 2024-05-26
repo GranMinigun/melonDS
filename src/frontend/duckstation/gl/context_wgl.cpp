@@ -385,6 +385,8 @@ bool ContextWGL::CreateVersionContext(const Version& version, HGLRC share_contex
                            version.major_version,
                            WGL_CONTEXT_MINOR_VERSION_ARB,
                            version.minor_version,
+                           WGL_SAMPLE_BUFFERS_ARB,
+                           1,
 #ifdef _DEBUG
                            WGL_CONTEXT_FLAGS_ARB,
                            WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB | WGL_CONTEXT_DEBUG_BIT_ARB,

@@ -283,7 +283,7 @@ bool ContextEGL::CreateContext(const Version& version, EGLContext share_context)
   Log_DevPrintf(
     "Trying version %u.%u (%s)", version.major_version, version.minor_version,
     version.profile == Context::Profile::ES ? "ES" : (version.profile == Context::Profile::Core ? "Core" : "None"));
-  int surface_attribs[16] = {
+  int surface_attribs[18] = {
     EGL_RENDERABLE_TYPE,
     (version.profile == Profile::ES) ?
       ((version.major_version >= 3) ? EGL_OPENGL_ES3_BIT :
@@ -291,8 +291,9 @@ bool ContextEGL::CreateContext(const Version& version, EGLContext share_context)
       EGL_OPENGL_BIT,
     EGL_SURFACE_TYPE,
     (m_wi.type != WindowInfo::Type::Surfaceless) ? EGL_WINDOW_BIT : 0,
+    EGL_SAMPLE_BUFFERS, 1
   };
-  int nsurface_attribs = 4;
+  int nsurface_attribs = 6;
 
   switch (m_wi.surface_format)
   {
